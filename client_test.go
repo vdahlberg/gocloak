@@ -2934,17 +2934,25 @@ func CreateUser(t *testing.T, client gocloak.GoCloak) (func(), string) {
 	cfg := GetConfig(t)
 	token := GetAdminToken(t, client)
 
+	email := GetRandomName("email") + "@localhost.com"
 	user := gocloak.User{
 		FirstName: GetRandomNameP("FirstName"),
 		LastName:  GetRandomNameP("LastName"),
-		Email:     gocloak.StringP(GetRandomName("email") + "@localhost.com"),
+		Email:     gocloak.StringP(email),
 		Enabled:   gocloak.BoolP(true),
 		Attributes: &map[string][]string{
 			"foo": {"bar", "alice", "bob", "roflcopter"},
 			"bar": {"baz"},
 		},
+		FederatedIdentities: &[]gocloak.FederatedIdentityRepresentation{
+			{
+				IdentityProvider: gocloak.StringP("google"),
+				UserName:         gocloak.StringP(email),
+				UserID:           GetRandomNameP("FID"),
+			},
+		},
 	}
-	user.Username = user.Email
+	user.Username = gocloak.StringP(email)
 
 	userID, err := client.CreateUser(
 		context.Background(),
@@ -2994,6 +3002,35 @@ func Test_CreateUserCustomAttributes(t *testing.T) {
 	require.False(t, !ok, "User doesn't have custom attributes")
 	ok = gocloak.UserAttributeContains(*fetchedUser.Attributes, "foo2", "alice")
 	require.False(t, ok, "User's custom attributes contains unexpected attribute")
+	t.Log(fetchedUser)
+}
+
+func Test_CreateUserFederatedIdentity(t *testing.T) {
+
+	cfg := GetConfig(t)
+	client := NewClientWithDebug(t)
+	token := GetAdminToken(t, client)
+
+	tearDown, userID := CreateUser(t, client)
+	defer tearDown()
+
+	fetchedUser, err := client.GetUserByID(
+		context.Background(),
+		token.AccessToken,
+		cfg.GoCloak.Realm,
+		userID)
+
+	t.Log("dwadawdwadwadwdaw: ", fetchedUser)
+
+	require.NoError(t, err, "GetUserByID failed")
+	require.NotNil(t, fetchedUser.FederatedIdentities)
+	require.Len(t, fetchedUser.FederatedIdentities, 2)
+
+	fid := (*fetchedUser.FederatedIdentities)[0]
+	require.Equal(t, "google", *fid.IdentityProvider)
+	require.NotNil(t, *fid.UserID)
+	require.NotNil(t, *fid.UserName)
+
 	t.Log(fetchedUser)
 }
 
